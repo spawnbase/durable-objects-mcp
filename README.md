@@ -1,26 +1,45 @@
 # durable-objects-mcp
 
-> "The pain of querying Durable Objects in production is so great we decided to do something about it."
-
 Unofficial MCP server for querying Cloudflare Durable Object SQLite storage from AI clients (Claude Code, Cursor, Windsurf, etc.).
 
 ## 🤔 Why
 
-While building [Spawnbase](https://spawnbase.ai), which relies heavily on Durable Objects, the pain of needing to query production DO state was so great that we decided to do something about it.
+While building [Spawnbase](https://spawnbase.ai) we realized how painful it is to query Durable Object storage in production. So we built this.
 
-Durable Objects store state in private SQLite databases. There is no REST API, no CLI, and no programmatic way to query this storage from outside the DO instance. The only option today is [Data Studio](https://developers.cloudflare.com/durable-objects/observability/data-studio/) — a manual, dashboard-only UI.
+Durable Objects store state in private SQLite databases. No REST API, no CLI, no programmatic access. The only option is [Data Studio](https://developers.cloudflare.com/durable-objects/observability/data-studio/) — manual and dashboard-only.
+
+And who would want to manually query thousands (millions?) of DOs manually, when we've got Claude Code and the like?
 
 This MCP server gives AI clients structured, read-only access to your DO storage. Connect once, discover tables, run queries.
 
-> TODO: We've raised a feature request with Cloudflare for native MCP/API support for DO storage. If Cloudflare ships that, this project becomes unnecessary — and that's a good outcome.
+> TODO: The best version of this tool is one that doesn't need to exist. We'd love Cloudflare to ship native secure query access for DO storage.
+> Until then, this fills the gap.
 
-## ⚙️ How it works
+## ⚙️ What it enables
 
 ```
-MCP Client ──MCP/HTTP──> durable-objects-mcp Worker ──DO binding──> DO.query(sql) ──> results
+You (while sipping coffee): "What tables does the AIAgent DO have for user abc123?"
+
+→ describe_schema({ class_name: "AIAgent", name: "abc123" })
+
+  _cf_KV           — key TEXT, value BLOB
+  cf_agents_state  — id TEXT, data BLOB
+  cf_agents_messages — id TEXT, role TEXT, content TEXT, created_at INTEGER
+  ...
+
+You (after the second sip): "Show me the last 5 messages"
+
+→ query({ class_name: "AIAgent", name: "abc123",
+          sql: "SELECT role, content FROM cf_agents_messages ORDER BY created_at DESC LIMIT 5" })
+
+  role       | content
+  -----------|----------------------------------
+  user       | Deploy the workflow to production
+  assistant  | I'll deploy workflow wf_a8c3...
+  ...
 ```
 
-The MCP server is a standalone Cloudflare Worker. It binds to your DO namespaces via `script_name` in `wrangler.jsonc` and calls a `query()` RPC method on each DO instance. Auth is handled via Cloudflare Access (OAuth).
+A standalone Cloudflare Worker that binds to your DO namespaces via `script_name` and calls a `query()` RPC method on each DO instance. Auth via Cloudflare Access (OAuth).
 
 ## 🔒 Security
 

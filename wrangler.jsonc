@@ -2,13 +2,24 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "durable-objects-mcp",
   "main": "src/index.ts",
+  "account_id": "9c02a0ea65440e5ee7d5b62990934324",
   "compatibility_date": "2026-03-24",
   "compatibility_flags": ["nodejs_compat"],
   "observability": {
     "enabled": true
   },
 
-  // McpAgent DO for MCP sessions
+  // Your domain — change to your own or remove for *.workers.dev
+  "routes": [
+    {
+      "pattern": "do-mcp.spawnbase.ai",
+      "zone_name": "spawnbase.ai",
+      "custom_domain": true
+    }
+  ],
+
+
+  // MCP session DO — do not remove
   "migrations": [
     {
       "new_sqlite_classes": ["DOMcpAgent"],
@@ -18,21 +29,31 @@
 
   "durable_objects": {
     "bindings": [
-      // MCP session handler
+      // MCP session handler — required
       {
         "name": "DO_MCP_AGENT",
         "class_name": "DOMcpAgent"
+      },
+      // Queryable DOs — add yours with script_name pointing at the owning Worker
+      {
+        "name": "AI_AGENT",
+        "class_name": "AIAgent",
+        "script_name": "spawnbase-worker"
+      },
+      {
+        "name": "SPAWNBASE_AGENT",
+        "class_name": "SpawnbaseAgent",
+        "script_name": "spawnbase-worker"
+      },
+      {
+        "name": "WORKFLOW_DRAFT",
+        "class_name": "WorkflowDraftDO",
+        "script_name": "spawnbase-worker"
       }
-      // Queryable DOs — add with script_name pointing at the owning Worker:
-      // {
-      //   "name": "AI_AGENT",
-      //   "class_name": "AIAgent",
-      //   "script_name": "spawnbase-worker"
-      // }
     ]
   },
 
-  // OAuth token storage
+  // OAuth token storage — create with: wrangler kv namespace create OAUTH_KV
   "kv_namespaces": [
     {
       "binding": "OAUTH_KV",

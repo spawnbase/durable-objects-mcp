@@ -1,1 +1,6 @@
+# CF Access SaaS app — from Zero Trust → Access → Applications → SaaS → OIDC
+ACCESS_TEAM=your-team-name
+ACCESS_CLIENT_ID=your-client-id
+ACCESS_CLIENT_SECRET=your-client-secret
+# Session encryption — generate with: openssl rand -hex 32
 COOKIE_ENCRYPTION_KEY=

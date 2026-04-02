@@ -4,13 +4,37 @@ import { z } from 'zod'
 
 import { assertReadOnly } from './sql-guard'
 
-const MAX_ROWS = 100
+const MAX_SQL_LENGTH = 10_000
 
-// DO namespaces configured in wrangler.jsonc — maps display name to env binding key
-const DO_CONFIG: Record<string, string> = {
-  // "AIAgent": "AI_AGENT",
-  // "WorkflowDraft": "WORKFLOW_DRAFT",
-  // "SpawnbaseAgent": "SPAWNBASE_AGENT",
+const classNameSchema = z.string().min(1).describe('DO binding name from list_classes')
+const instanceNameSchema = z.string().min(1).describe('DO instance name (e.g. userId) or hex ID (64-char hex from dashboard)')
+const sqlSchema = z.string().min(1).max(MAX_SQL_LENGTH).describe('Read-only SQL query (SQLite syntax)')
+
+const HEX_ID_RE = /^[0-9a-f]{64}$/i
+
+function getStub(ns: DurableObjectNamespace, nameOrId: string) {
+  if (HEX_ID_RE.test(nameOrId)) {
+    return ns.get(ns.idFromString(nameOrId))
+  }
+  return ns.getByName(nameOrId)
+}
+
+// Bindings to exclude from auto-discovery (not queryable DOs)
+const EXCLUDED_BINDINGS = new Set(['DO_MCP_AGENT', 'OAUTH_KV'])
+
+function getQueryableDOs(env: Env): Record<string, DurableObjectNamespace> {
+  const result: Record<string, DurableObjectNamespace> = {}
+  for (const [key, binding] of Object.entries(env)) {
+    if (
+      !EXCLUDED_BINDINGS.has(key) &&
+      typeof binding === 'object' &&
+      binding !== null &&
+      'idFromName' in binding
+    ) {
+      result[key] = binding as DurableObjectNamespace
+    }
+  }
+  return result
 }
 
 export class DurableObjectsMcpAgent extends McpAgent<
@@ -24,6 +48,8 @@ export class DurableObjectsMcpAgent extends McpAgent<
   })
 
   async init() {
+    const namespaces = getQueryableDOs(this.env)
+
     this.server.registerTool(
       'list_classes',
       {
@@ -31,12 +57,11 @@ export class DurableObjectsMcpAgent extends McpAgent<
         inputSchema: {},
       },
       async () => {
-        const classes = Object.keys(DO_CONFIG)
         return {
           content: [
             {
               type: 'text' as const,
-              text: JSON.stringify({ classes }, null, 2),
+              text: JSON.stringify({ classes: Object.keys(namespaces) }, null, 2),
             },
           ],
         }
@@ -49,17 +74,13 @@ export class DurableObjectsMcpAgent extends McpAgent<
         description:
           'List tables and columns in a Durable Object instance SQLite database',
         inputSchema: {
-          class_name: z.string().describe('DO class name from list_classes'),
-          name: z
-            .string()
-            .describe(
-              'DO instance name (e.g. userId). Used with idFromName().',
-            ),
+          class_name: classNameSchema,
+          name: instanceNameSchema,
         },
       },
       async ({ class_name, name }) => {
-        const bindingKey = DO_CONFIG[class_name]
-        if (!bindingKey) {
+        const ns = namespaces[class_name]
+        if (!ns) {
           return {
             content: [
               {
@@ -71,11 +92,7 @@ export class DurableObjectsMcpAgent extends McpAgent<
           }
         }
 
-        const ns = (this.env as Record<string, DurableObjectNamespace>)[
-          bindingKey
-        ]
-        const id = ns.idFromName(name)
-        const stub = ns.get(id)
+        const stub = getStub(ns, name)
         const result = await (stub as any).query(
           "SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
         )
@@ -93,18 +110,14 @@ export class DurableObjectsMcpAgent extends McpAgent<
         description:
           'Execute read-only SQL against a Durable Object instance. Only SELECT, PRAGMA, EXPLAIN, WITH allowed.',
         inputSchema: {
-          class_name: z.string().describe('DO class name from list_classes'),
-          name: z
-            .string()
-            .describe(
-              'DO instance name (e.g. userId). Used with idFromName().',
-            ),
-          sql: z.string().describe('Read-only SQL query'),
+          class_name: classNameSchema,
+          name: instanceNameSchema,
+          sql: sqlSchema,
         },
       },
       async ({ class_name, name, sql }) => {
-        const bindingKey = DO_CONFIG[class_name]
-        if (!bindingKey) {
+        const ns = namespaces[class_name]
+        if (!ns) {
           return {
             content: [
               {
@@ -130,18 +143,10 @@ export class DurableObjectsMcpAgent extends McpAgent<
           }
         }
 
-        const ns = (this.env as Record<string, DurableObjectNamespace>)[
-          bindingKey
-        ]
-        const id = ns.idFromName(name)
-        const stub = ns.get(id)
-
-        const limitedSql = sql.includes('LIMIT')
-          ? sql
-          : `${sql.replace(/;?\s*$/, '')} LIMIT ${MAX_ROWS}`
+        const stub = getStub(ns, name)
 
         try {
-          const result = await (stub as any).query(limitedSql)
+          const result = await (stub as any).query(sql)
           return {
             content: [
               {
