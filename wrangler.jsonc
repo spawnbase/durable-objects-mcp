@@ -1,0 +1,42 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "durable-objects-mcp",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-03-24",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+
+  // McpAgent DO for MCP sessions
+  "migrations": [
+    {
+      "new_sqlite_classes": ["DOMcpAgent"],
+      "tag": "v1"
+    }
+  ],
+
+  "durable_objects": {
+    "bindings": [
+      // MCP session handler
+      {
+        "name": "DO_MCP_AGENT",
+        "class_name": "DOMcpAgent"
+      }
+      // Queryable DOs — add with script_name pointing at the owning Worker:
+      // {
+      //   "name": "AI_AGENT",
+      //   "class_name": "AIAgent",
+      //   "script_name": "spawnbase-worker"
+      // }
+    ]
+  },
+
+  // OAuth token storage
+  "kv_namespaces": [
+    {
+      "binding": "OAUTH_KV",
+      "id": "a8f678337ed043d3b7d59c66d798323c"
+    }
+  ]
+}
