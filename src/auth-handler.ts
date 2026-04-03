@@ -1,9 +1,13 @@
 // Adapted from https://github.com/cloudflare/ai/tree/main/demos/remote-mcp-cf-access
 
 import { Buffer } from 'node:buffer'
+import { env } from 'cloudflare:workers'
 import type {
   AuthRequest,
+  GrantType,
   OAuthHelpers,
+  TokenExchangeCallbackOptions,
+  TokenExchangeCallbackResult,
 } from '@cloudflare/workers-oauth-provider'
 
 import {
@@ -15,6 +19,7 @@ import {
   isClientApproved,
   OAuthError,
   type Props,
+  refreshUpstreamToken,
   renderApprovalDialog,
   validateCSRFToken,
   validateOAuthState,
@@ -134,19 +139,21 @@ export default {
         return new Response('Invalid OAuth request data', { status: 400 })
       }
 
-      const [accessToken, idToken, errResponse] =
-        await fetchUpstreamAuthToken({
-          client_id: env.ACCESS_CLIENT_ID,
-          client_secret: env.ACCESS_CLIENT_SECRET,
-          code: searchParams.get('code') ?? undefined,
-          redirect_uri: new URL('/callback', request.url).href,
-          upstream_url: urls.token,
-        })
+      const [tokens, errResponse] = await fetchUpstreamAuthToken({
+        client_id: env.ACCESS_CLIENT_ID,
+        client_secret: env.ACCESS_CLIENT_SECRET,
+        code: searchParams.get('code') ?? undefined,
+        redirect_uri: new URL('/callback', request.url).href,
+        upstream_url: urls.token,
+      })
       if (errResponse) {
         return errResponse
       }
 
-      const claims = await verifyToken(urls.jwks, idToken)
+      const claims = await verifyToken(urls.jwks, tokens.idToken, {
+        audience: env.ACCESS_CLIENT_ID,
+        issuer: `https://${env.ACCESS_TEAM}.cloudflareaccess.com`,
+      })
 
       const { redirectTo } = await env.OAUTH_PROVIDER.completeAuthorization({
         request: oauthReqInfo,
@@ -154,11 +161,12 @@ export default {
         metadata: { label: claims.name ?? claims.email },
         scope: oauthReqInfo.scope,
         props: {
-          accessToken,
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
           email: claims.email,
           login: claims.sub,
           name: claims.name,
-        } as Props,
+        } satisfies Props,
       })
 
       return Response.redirect(redirectTo, 302)
@@ -220,8 +228,14 @@ function parseJWT(token: string) {
 async function verifyToken(
   jwksUrl: string,
   token: string,
+  expected: { audience: string; issuer: string },
 ): Promise<{ sub: string; email: string; name: string; exp: number }> {
   const jwt = parseJWT(token)
+
+  if (jwt.header.alg !== 'RS256') {
+    throw new Error(`Unexpected JWT algorithm: ${jwt.header.alg}`)
+  }
+
   const key = await fetchAccessPublicKey(jwksUrl, jwt.header.kid)
 
   const verified = await crypto.subtle.verify(
@@ -232,9 +246,70 @@ async function verifyToken(
   )
   if (!verified) throw new Error('Invalid JWT signature')
 
-  if (jwt.payload.exp < Math.floor(Date.now() / 1000)) {
+  const now = Math.floor(Date.now() / 1000)
+
+  if (jwt.payload.exp < now) {
     throw new Error('Expired token')
   }
 
+  if (jwt.payload.iat !== undefined && jwt.payload.iat > now + 60) {
+    throw new Error('Token issued in the future')
+  }
+
+  if (jwt.payload.nbf !== undefined && jwt.payload.nbf > now) {
+    throw new Error('Token not yet valid')
+  }
+
+  const aud = jwt.payload.aud
+  const audArray = Array.isArray(aud) ? aud : [aud]
+  if (!audArray.includes(expected.audience)) {
+    throw new Error('Invalid token audience')
+  }
+
+  if (jwt.payload.iss !== expected.issuer) {
+    throw new Error('Invalid token issuer')
+  }
+
   return jwt.payload
+}
+
+/**
+ * Called by OAuthProvider on every token issuance/refresh.
+ * On refresh: validates the upstream CF Access session is still active
+ * by attempting to refresh the upstream token. If the user was removed
+ * from the Access policy, the refresh fails and we reject the MCP session.
+ */
+export async function tokenExchangeCallback({
+  grantType,
+  props,
+}: TokenExchangeCallbackOptions): Promise<
+  TokenExchangeCallbackResult | void
+> {
+  const typedProps = props as Props
+
+  // Only validate upstream session on refresh
+  if (grantType !== ('refresh_token' as GrantType)) return
+  if (!typedProps.refreshToken) return
+
+  const typedEnv = env as Env
+  const tokenUrl = cfAccessUrls(typedEnv.ACCESS_TEAM, typedEnv.ACCESS_CLIENT_ID).token
+
+  const result = await refreshUpstreamToken({
+    upstream_url: tokenUrl,
+    client_id: typedEnv.ACCESS_CLIENT_ID,
+    client_secret: typedEnv.ACCESS_CLIENT_SECRET,
+    refresh_token: typedProps.refreshToken,
+  })
+
+  if (!result) {
+    throw new Error('Upstream session revoked')
+  }
+
+  return {
+    newProps: {
+      ...typedProps,
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken ?? typedProps.refreshToken,
+    },
+  }
 }

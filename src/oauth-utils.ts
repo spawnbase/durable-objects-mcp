@@ -215,9 +215,36 @@ export function renderApprovalDialog(
   const encodedState = btoa(JSON.stringify(state))
 
   const serverName = sanitizeText(server.name)
+  const serverDescription = server.description
+    ? sanitizeText(server.description)
+    : ''
   const clientName = client?.clientName
     ? sanitizeText(client.clientName)
     : 'Unknown MCP Client'
+
+  const logoUrl = server.logo ? sanitizeText(sanitizeUrl(server.logo)) : ''
+  const clientUri = client?.clientUri
+    ? sanitizeText(sanitizeUrl(client.clientUri))
+    : ''
+  const policyUri = client?.policyUri
+    ? sanitizeText(sanitizeUrl(client.policyUri))
+    : ''
+  const tosUri = client?.tosUri
+    ? sanitizeText(sanitizeUrl(client.tosUri))
+    : ''
+  const contacts =
+    client?.contacts && client.contacts.length > 0
+      ? sanitizeText(client.contacts.join(', '))
+      : ''
+  const redirectUris =
+    client?.redirectUris && client.redirectUris.length > 0
+      ? client.redirectUris
+          .map((uri) => {
+            const validated = sanitizeUrl(uri)
+            return validated ? sanitizeText(validated) : ''
+          })
+          .filter((uri) => uri !== '')
+      : []
 
   const htmlContent = `
     <!DOCTYPE html>
@@ -227,27 +254,98 @@ export function renderApprovalDialog(
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>${clientName} | Authorization Request</title>
         <style>
-          body { font-family: system-ui, sans-serif; background: #f9fafb; margin: 0; padding: 2rem; }
-          .card { max-width: 480px; margin: 0 auto; background: #fff; border-radius: 8px; box-shadow: 0 8px 36px rgba(0,0,0,0.1); padding: 2rem; }
-          h1 { font-size: 1.2rem; text-align: center; }
-          .actions { display: flex; gap: 1rem; justify-content: flex-end; margin-top: 2rem; }
-          button { padding: 0.75rem 1.5rem; border-radius: 6px; font-size: 1rem; cursor: pointer; border: none; }
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f9fafb;
+            margin: 0;
+            padding: 0;
+          }
+          .container { max-width: 600px; margin: 2rem auto; padding: 1rem; }
+          .precard { padding: 2rem; text-align: center; }
+          .header { display: flex; align-items: center; justify-content: center; margin-bottom: 1.5rem; }
+          .logo { width: 48px; height: 48px; margin-right: 1rem; border-radius: 8px; object-fit: contain; }
+          .title { margin: 0; font-size: 1.3rem; font-weight: 400; }
+          .description { color: #555; }
+          .card { background: #fff; border-radius: 8px; box-shadow: 0 8px 36px 8px rgba(0,0,0,0.1); padding: 2rem; }
+          .alert { font-size: 1.5rem; font-weight: 400; margin: 1rem 0; text-align: center; }
+          .client-info { border: 1px solid #e5e7eb; border-radius: 6px; padding: 1rem 1rem 0.5rem; margin-bottom: 1.5rem; }
+          .client-detail { display: flex; margin-bottom: 0.5rem; align-items: baseline; }
+          .detail-label { font-weight: 500; min-width: 120px; }
+          .detail-value { font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace; word-break: break-all; }
+          .detail-value a { color: inherit; text-decoration: underline; }
+          .detail-value.small { font-size: 0.8em; }
+          .actions { display: flex; justify-content: flex-end; gap: 1rem; margin-top: 2rem; }
+          button { padding: 0.75rem 1.5rem; border-radius: 6px; font-weight: 500; cursor: pointer; border: none; font-size: 1rem; }
           .primary { background: #0070f3; color: #fff; }
-          .secondary { background: transparent; border: 1px solid #e5e7eb; }
+          .secondary { background: transparent; border: 1px solid #e5e7eb; color: #333; }
+          @media (max-width: 640px) {
+            .container { margin: 1rem auto; padding: 0.5rem; }
+            .card { padding: 1.5rem; }
+            .client-detail { flex-direction: column; }
+            .detail-label { min-width: unset; margin-bottom: 0.25rem; }
+            .actions { flex-direction: column; }
+            button { width: 100%; }
+          }
         </style>
       </head>
       <body>
-        <div class="card">
-          <h1><strong>${clientName}</strong> wants to connect to <strong>${serverName}</strong></h1>
-          <p>Approve to continue with authentication.</p>
-          <form method="post" action="${new URL(request.url).pathname}">
-            <input type="hidden" name="state" value="${encodedState}">
-            <input type="hidden" name="csrf_token" value="${csrfToken}">
-            <div class="actions">
-              <button type="button" class="secondary" onclick="window.history.back()">Cancel</button>
-              <button type="submit" class="primary">Approve</button>
+        <div class="container">
+          <div class="precard">
+            <div class="header">
+              ${logoUrl ? `<img src="${logoUrl}" alt="${serverName} Logo" class="logo">` : ''}
+              <h1 class="title"><strong>${serverName}</strong></h1>
             </div>
-          </form>
+            ${serverDescription ? `<p class="description">${serverDescription}</p>` : ''}
+          </div>
+
+          <div class="card">
+            <h2 class="alert"><strong>${clientName}</strong> is requesting access</h2>
+
+            <div class="client-info">
+              <div class="client-detail">
+                <div class="detail-label">Name:</div>
+                <div class="detail-value">${clientName}</div>
+              </div>
+              ${clientUri ? `
+              <div class="client-detail">
+                <div class="detail-label">Website:</div>
+                <div class="detail-value small"><a href="${clientUri}" target="_blank" rel="noopener noreferrer">${clientUri}</a></div>
+              </div>` : ''}
+              ${policyUri ? `
+              <div class="client-detail">
+                <div class="detail-label">Privacy Policy:</div>
+                <div class="detail-value"><a href="${policyUri}" target="_blank" rel="noopener noreferrer">${policyUri}</a></div>
+              </div>` : ''}
+              ${tosUri ? `
+              <div class="client-detail">
+                <div class="detail-label">Terms:</div>
+                <div class="detail-value"><a href="${tosUri}" target="_blank" rel="noopener noreferrer">${tosUri}</a></div>
+              </div>` : ''}
+              ${redirectUris.length > 0 ? `
+              <div class="client-detail">
+                <div class="detail-label">Redirect URIs:</div>
+                <div class="detail-value small">${redirectUris.map((uri) => `<div>${uri}</div>`).join('')}</div>
+              </div>` : ''}
+              ${contacts ? `
+              <div class="client-detail">
+                <div class="detail-label">Contact:</div>
+                <div class="detail-value">${contacts}</div>
+              </div>` : ''}
+            </div>
+
+            <p>This MCP Client is requesting to be authorized on ${serverName}. If you approve, you will be redirected to complete authentication.</p>
+
+            <form method="post" action="${new URL(request.url).pathname}">
+              <input type="hidden" name="state" value="${encodedState}">
+              <input type="hidden" name="csrf_token" value="${csrfToken}">
+              <div class="actions">
+                <button type="button" class="secondary" onclick="window.history.back()">Cancel</button>
+                <button type="submit" class="primary">Approve</button>
+              </div>
+            </form>
+          </div>
         </div>
       </body>
     </html>
@@ -279,19 +377,21 @@ export function getUpstreamAuthorizeUrl(params: {
   return url.toString()
 }
 
+export interface UpstreamTokenResult {
+  accessToken: string
+  idToken: string
+  refreshToken?: string
+}
+
 export async function fetchUpstreamAuthToken(params: {
   upstream_url: string
   client_id: string
   client_secret: string
   code?: string
   redirect_uri: string
-}): Promise<[string, string, null] | [null, null, Response]> {
+}): Promise<[UpstreamTokenResult, null] | [null, Response]> {
   if (!params.code) {
-    return [
-      null,
-      null,
-      new Response('Missing authorization code', { status: 400 }),
-    ]
+    return [null, new Response('Missing authorization code', { status: 400 })]
   }
 
   const response = await fetch(params.upstream_url, {
@@ -310,32 +410,81 @@ export async function fetchUpstreamAuthToken(params: {
   })
 
   if (!response.ok) {
-    const errorText = await response.text()
-    return [
-      null,
-      null,
-      new Response(`Failed to exchange code for token: ${errorText}`, {
-        status: response.status,
-      }),
-    ]
+    console.error(
+      'Token exchange failed:',
+      response.status,
+      await response.text(),
+    )
+    return [null, new Response('Failed to exchange authorization code', { status: 502 })]
   }
 
   const body = (await response.json()) as Record<string, unknown>
   const accessToken = body.access_token as string
   if (!accessToken) {
-    return [null, null, new Response('Missing access token', { status: 400 })]
+    return [null, new Response('Missing access token', { status: 400 })]
   }
 
   const idToken = body.id_token as string
   if (!idToken) {
-    return [null, null, new Response('Missing id token', { status: 400 })]
+    return [null, new Response('Missing id token', { status: 400 })]
   }
 
-  return [accessToken, idToken, null]
+  return [
+    {
+      accessToken,
+      idToken,
+      refreshToken: (body.refresh_token as string) || undefined,
+    },
+    null,
+  ]
+}
+
+/**
+ * Refresh an upstream access token using a refresh token.
+ * Returns new tokens on success, null if the upstream session was revoked.
+ */
+export async function refreshUpstreamToken(params: {
+  upstream_url: string
+  client_id: string
+  client_secret: string
+  refresh_token: string
+}): Promise<{ accessToken: string; refreshToken?: string } | null> {
+  const response = await fetch(params.upstream_url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Accept: 'application/json',
+    },
+    body: new URLSearchParams({
+      client_id: params.client_id,
+      client_secret: params.client_secret,
+      refresh_token: params.refresh_token,
+      grant_type: 'refresh_token',
+    }).toString(),
+  })
+
+  if (!response.ok) {
+    console.error(
+      'Upstream token refresh failed:',
+      response.status,
+      await response.text(),
+    )
+    return null
+  }
+
+  const body = (await response.json()) as Record<string, unknown>
+  const accessToken = body.access_token as string
+  if (!accessToken) return null
+
+  return {
+    accessToken,
+    refreshToken: (body.refresh_token as string) || undefined,
+  }
 }
 
 export interface Props {
   accessToken: string
+  refreshToken?: string
   email: string
   login: string
   name: string
