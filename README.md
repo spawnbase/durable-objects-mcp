@@ -46,8 +46,7 @@ A standalone Cloudflare Worker that binds to your DO namespaces via `script_name
 - **Cloudflare Access (OAuth)** — auth at the edge. Unauthenticated requests never reach the Worker.
 - **PRAGMA query_only** — SQLite engine rejects all write operations at the database level.
 - **SQL guard** — server-side validation rejects non-SELECT statements before they reach the DO.
-- **Row limit** — queries without LIMIT are capped at 100 rows.
-- **Namespace allowlist** — only DO classes explicitly configured in `DO_CONFIG` are queryable.
+- **Namespace allowlist** — only DO classes with bindings in `wrangler.jsonc` are queryable. Auto-discovered, no manual config.
 
 ## 🛠️ Tools
 
@@ -100,25 +99,19 @@ Edit `wrangler.jsonc` — add DO bindings pointing at your Worker:
 }
 ```
 
-Edit `src/mcp-agent.ts` — map class names to binding keys:
-
-```typescript
-const DO_CONFIG: Record<string, string> = {
-  AIAgent: 'AI_AGENT',
-}
-```
+Any DO binding (except `DO_MCP_AGENT`) is automatically queryable — no additional config needed.
 
 ### 3. Set up auth (Cloudflare Access)
 
-Create a [Cloudflare Access for SaaS](https://developers.cloudflare.com/cloudflare-one/access-controls/ai-controls/saas-mcp/) application. You'll need these Worker secrets:
+Create a [Cloudflare Access for SaaS](https://developers.cloudflare.com/cloudflare-one/access-controls/ai-controls/saas-mcp/) application with OIDC protocol. Set the redirect URL to `https://your-worker.workers.dev/callback`. Add a policy to control who can access.
+
+Then set secrets:
 
 ```bash
-wrangler secret put ACCESS_CLIENT_ID
-wrangler secret put ACCESS_CLIENT_SECRET
-wrangler secret put ACCESS_TOKEN_URL
-wrangler secret put ACCESS_AUTHORIZATION_URL
-wrangler secret put ACCESS_JWKS_URL
-wrangler secret put COOKIE_ENCRYPTION_KEY  # openssl rand -hex 32
+wrangler secret put ACCESS_TEAM             # your Zero Trust team name
+wrangler secret put ACCESS_CLIENT_ID        # from the SaaS app
+wrangler secret put ACCESS_CLIENT_SECRET    # from the SaaS app
+wrangler secret put COOKIE_ENCRYPTION_KEY   # openssl rand -hex 32
 ```
 
 ### 4. Deploy
@@ -129,6 +122,14 @@ wrangler deploy
 
 ### 5. Connect your MCP client
 
+On first connect, you'll authenticate via Cloudflare Access (browser popup). After that, the session persists.
+
+**Claude Code:**
+```bash
+claude mcp add --transport http do-explorer https://your-worker.workers.dev/mcp
+```
+
+**Cursor / Windsurf / other MCP clients:**
 ```json
 {
   "mcpServers": {
@@ -139,7 +140,17 @@ wrangler deploy
 }
 ```
 
-On first connect, you'll authenticate via Cloudflare Access. After that, the session persists.
+**OpenCode / Codex / clients without remote MCP support:**
+```json
+{
+  "mcpServers": {
+    "do-explorer": {
+      "command": "npx",
+      "args": ["mcp-remote", "https://your-worker.workers.dev/mcp"]
+    }
+  }
+}
+```
 
 ## 📋 Requirements
 
