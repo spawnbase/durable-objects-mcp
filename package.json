@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "cf-typegen": "wrangler types",
-    "deploy": "wrangler deploy",
     "dev": "wrangler dev",
-    "start": "wrangler dev"
+    "cf-typegen": "wrangler types",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit",
+    "deploy": "wrangler deploy"
   },
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "0.3.2",
