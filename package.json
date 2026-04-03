@@ -2,15 +2,25 @@
   "name": "durable-objects-mcp",
   "version": "0.0.1",
   "private": true,
-  "packageManager": "pnpm@10.33.0",
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
-    "cf-typegen": "wrangler types",
-    "typecheck": "tsc --noEmit",
     "build": "wrangler types && tsc --noEmit",
+    "cf-typegen": "wrangler types",
     "deploy": "wrangler deploy",
-    "test": "npx vitest run"
+    "dev": "wrangler dev",
+    "lint": "oxlint --fix",
+    "prepare": "husky",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "prettier --write",
+      "oxlint --fix"
+    ],
+    "*.{json,md,yaml,yml}": [
+      "prettier --write"
+    ]
   },
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "0.3.2",
@@ -21,8 +31,13 @@
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.13.5",
     "@types/node": "22.15.3",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
+    "oxlint": "^1.57.0",
+    "prettier": "^3.8.1",
     "typescript": "5.9.3",
     "vitest": "4.1.2",
     "wrangler": "4.78.0"
-  }
+  },
+  "packageManager": "pnpm@10.33.0"
 }
