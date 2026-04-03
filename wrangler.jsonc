@@ -2,13 +2,13 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "durable-objects-mcp",
   "main": "src/index.ts",
-  "account_id": "9c02a0ea65440e5ee7d5b62990934324",
   "compatibility_date": "2026-03-24",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
   "observability": {
     "enabled": true
   },
-
   // Your domain — change to your own or remove for *.workers.dev
   "routes": [
     {
@@ -17,16 +17,15 @@
       "custom_domain": true
     }
   ],
-
-
   // MCP session DO — do not remove
   "migrations": [
     {
-      "new_sqlite_classes": ["DOMcpAgent"],
+      "new_sqlite_classes": [
+        "DOMcpAgent"
+      ],
       "tag": "v1"
     }
   ],
-
   "durable_objects": {
     "bindings": [
       // MCP session handler — required
@@ -52,7 +51,6 @@
       }
     ]
   },
-
   // OAuth token storage — create with: wrangler kv namespace create OAUTH_KV
   "kv_namespaces": [
     {

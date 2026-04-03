@@ -3,4 +3,4 @@ ACCESS_TEAM=your-team-name
 ACCESS_CLIENT_ID=your-client-id
 ACCESS_CLIENT_SECRET=your-client-secret
 # Session encryption — generate with: openssl rand -hex 32
-COOKIE_ENCRYPTION_KEY=
+COOKIE_ENCRYPTION_KEY=71efff6f600a4955bfea64ce57c949d4fe98668565b5e1b459fbd3ec046c820c
