@@ -1,4 +1,4 @@
-# 🧊 durable-objects-mcp
+# 🟧 durable-objects-mcp
 
 ![Rick Rubin knows](https://github.com/user-attachments/assets/b9188499-55cb-44ad-887f-b11768b187f2)
 
