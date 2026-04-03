@@ -27,7 +27,7 @@ import {
 
 type EnvWithOauth = Env & { OAUTH_PROVIDER: OAuthHelpers }
 
-function cfAccessUrls(team: string, clientId: string) {
+export function cfAccessUrls(team: string, clientId: string) {
   const base = `https://${team}.cloudflareaccess.com/cdn-cgi/access/sso/oidc/${clientId}`
   return {
     authorization: `${base}/authorization`,

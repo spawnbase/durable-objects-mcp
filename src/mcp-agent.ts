@@ -10,19 +10,67 @@ const classNameSchema = z.string().min(1).describe('DO binding name from list_cl
 const instanceNameSchema = z.string().min(1).describe('DO instance name (e.g. userId) or hex ID (64-char hex from dashboard)')
 const sqlSchema = z.string().min(1).max(MAX_SQL_LENGTH).describe('Read-only SQL query (SQLite syntax)')
 
-const HEX_ID_RE = /^[0-9a-f]{64}$/i
+export const HEX_ID_RE = /^[0-9a-f]{64}$/i
 
-function getStub(ns: DurableObjectNamespace, nameOrId: string) {
+export function getStub(ns: DurableObjectNamespace, nameOrId: string) {
   if (HEX_ID_RE.test(nameOrId)) {
     return ns.get(ns.idFromString(nameOrId))
   }
   return ns.getByName(nameOrId)
 }
 
-// Bindings to exclude from auto-discovery (not queryable DOs)
-const EXCLUDED_BINDINGS = new Set(['DO_MCP_AGENT', 'OAUTH_KV'])
+/**
+ * Retry RPC calls with exponential backoff per CF DO best practices.
+ * Creates a fresh stub per attempt (broken stubs can't be reused).
+ * Never retries overloaded errors.
+ */
+export async function callWithRetry(
+  ns: DurableObjectNamespace,
+  nameOrId: string,
+  sql: string,
+  maxAttempts = 3,
+): Promise<unknown> {
+  let attempt = 0
+  while (true) {
+    try {
+      const stub = getStub(ns, nameOrId)
+      return await (stub as unknown as { query: (sql: string) => unknown }).query(sql)
+    } catch (e: unknown) {
+      const err = e as { retryable?: boolean; overloaded?: boolean; message?: string }
+      if (!err.retryable || err.overloaded) {
+        console.error('DO RPC failed (non-retryable)', {
+          class: nameOrId,
+          attempt,
+          overloaded: err.overloaded,
+          message: err.message,
+        })
+        throw e
+      }
+      attempt++
+      if (attempt >= maxAttempts) {
+        console.error('DO RPC failed after max retries', {
+          class: nameOrId,
+          attempts: attempt,
+          message: err.message,
+        })
+        throw e
+      }
+      const backoff = Math.min(5000, 100 * Math.random() * Math.pow(2, attempt))
+      console.warn('DO RPC retrying', {
+        class: nameOrId,
+        attempt,
+        backoffMs: Math.round(backoff),
+        message: err.message,
+      })
+      await new Promise((r) => setTimeout(r, backoff))
+    }
+  }
+}
 
-function getQueryableDOs(env: Env): Record<string, DurableObjectNamespace> {
+// Bindings to exclude from auto-discovery (not queryable DOs)
+export const EXCLUDED_BINDINGS = new Set(['DO_MCP_AGENT', 'OAUTH_KV'])
+
+export function getQueryableDOs(env: Env): Record<string, DurableObjectNamespace> {
   const result: Record<string, DurableObjectNamespace> = {}
   for (const [key, binding] of Object.entries(env)) {
     if (
@@ -92,14 +140,27 @@ export class DurableObjectsMcpAgent extends McpAgent<
           }
         }
 
-        const stub = getStub(ns, name)
-        const result = await (stub as any).query(
-          "SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
-        )
-        return {
-          content: [
-            { type: 'text' as const, text: JSON.stringify(result, null, 2) },
-          ],
+        try {
+          const result = await callWithRetry(
+            ns,
+            name,
+            "SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+          )
+          return {
+            content: [
+              { type: 'text' as const, text: JSON.stringify(result, null, 2) },
+            ],
+          }
+        } catch (e) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `Failed to describe schema: ${e instanceof Error ? e.message : String(e)}`,
+              },
+            ],
+            isError: true,
+          }
         }
       },
     )
@@ -143,10 +204,8 @@ export class DurableObjectsMcpAgent extends McpAgent<
           }
         }
 
-        const stub = getStub(ns, name)
-
         try {
-          const result = await (stub as any).query(sql)
+          const result = await callWithRetry(ns, name, sql)
           return {
             content: [
               {
