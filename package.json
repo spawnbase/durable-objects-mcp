@@ -7,7 +7,7 @@
     "dev": "wrangler dev",
     "cf-typegen": "wrangler types",
     "typecheck": "tsc --noEmit",
-    "build": "tsc --noEmit",
+    "build": "wrangler types && tsc --noEmit",
     "deploy": "wrangler deploy"
   },
   "dependencies": {
