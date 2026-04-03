@@ -50,11 +50,11 @@ We took security seriously when building this. Here's what we put in place:
 
 ## 🛠️ Tools
 
-| Tool              | What it does                                             |
-| ----------------- | -------------------------------------------------------- |
-| `list_classes`    | Lists queryable DO classes configured in your deployment |
-| `describe_schema` | Returns tables and columns for a DO instance             |
-| `query`           | Executes read-only SQL against a DO instance             |
+| Tool                 | What it does                                             |
+| -------------------- | -------------------------------------------------------- |
+| `list_classes`       | Lists queryable DO classes configured in your deployment |
+| `describe_schema`    | Returns tables and columns for a DO instance             |
+| `execute_read_query` | Executes read-only SQL against a DO instance             |
 
 ## 🚀 Setup
 

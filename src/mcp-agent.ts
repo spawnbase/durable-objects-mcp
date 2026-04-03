@@ -6,9 +6,21 @@ import { assertReadOnly } from './sql-guard'
 
 const MAX_SQL_LENGTH = 10_000
 
-const classNameSchema = z.string().min(1).describe('DO binding name from list_classes')
-const instanceNameSchema = z.string().min(1).describe('DO instance name (e.g. userId) or hex ID (64-char hex from dashboard)')
-const sqlSchema = z.string().min(1).max(MAX_SQL_LENGTH).describe('Read-only SQL query (SQLite syntax)')
+const classNameSchema = z
+  .string()
+  .min(1)
+  .describe('DO binding name from list_classes')
+const instanceNameSchema = z
+  .string()
+  .min(1)
+  .describe(
+    'DO instance name (e.g. userId) or hex ID (64-char hex from dashboard)',
+  )
+const sqlSchema = z
+  .string()
+  .min(1)
+  .max(MAX_SQL_LENGTH)
+  .describe('Read-only SQL query (SQLite syntax)')
 
 export const HEX_ID_RE = /^[0-9a-f]{64}$/i
 
@@ -34,9 +46,15 @@ export async function callWithRetry(
   while (true) {
     try {
       const stub = getStub(ns, nameOrId)
-      return await (stub as unknown as { query: (sql: string) => unknown }).query(sql)
+      return await (
+        stub as unknown as { query: (sql: string) => unknown }
+      ).query(sql)
     } catch (e: unknown) {
-      const err = e as { retryable?: boolean; overloaded?: boolean; message?: string }
+      const err = e as {
+        retryable?: boolean
+        overloaded?: boolean
+        message?: string
+      }
       if (!err.retryable || err.overloaded) {
         console.error('DO RPC failed (non-retryable)', {
           class: nameOrId,
@@ -70,7 +88,9 @@ export async function callWithRetry(
 // Bindings to exclude from auto-discovery (not queryable DOs)
 export const EXCLUDED_BINDINGS = new Set(['DO_MCP_AGENT', 'OAUTH_KV'])
 
-export function getQueryableDOs(env: Env): Record<string, DurableObjectNamespace> {
+export function getQueryableDOs(
+  env: Env,
+): Record<string, DurableObjectNamespace> {
   const result: Record<string, DurableObjectNamespace> = {}
   for (const [key, binding] of Object.entries(env)) {
     if (
@@ -109,7 +129,11 @@ export class DurableObjectsMcpAgent extends McpAgent<
           content: [
             {
               type: 'text' as const,
-              text: JSON.stringify({ classes: Object.keys(namespaces) }, null, 2),
+              text: JSON.stringify(
+                { classes: Object.keys(namespaces) },
+                null,
+                2,
+              ),
             },
           ],
         }
@@ -166,10 +190,10 @@ export class DurableObjectsMcpAgent extends McpAgent<
     )
 
     this.server.registerTool(
-      'query',
+      'execute_read_query',
       {
         description:
-          'Execute read-only SQL against a Durable Object instance. Only SELECT, PRAGMA, EXPLAIN, WITH allowed.',
+          'Execute a read-only SQL query (SELECT, EXPLAIN, WITH) against a Durable Object instance SQLite database.',
         inputSchema: {
           class_name: classNameSchema,
           name: instanceNameSchema,
