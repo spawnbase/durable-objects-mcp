@@ -1,6 +1,8 @@
 # durable-objects-mcp
 
-Unofficial MCP server for querying Cloudflare Durable Object SQLite storage from AI clients (Claude Code, Cursor, Windsurf, etc.).
+![Rick Rubin knows](https://github.com/user-attachments/assets/b9188499-55cb-44ad-887f-b11768b187f2)
+
+Unofficial MCP server for querying Cloudflare Durable Object SQLite storage from AI clients (Claude Code, Cursor, Windsurf, etc.). Gives AI clients structured, read-only access to your DO storage. Connect once, discover tables, run queries.
 
 ## 🤔 Why
 
@@ -9,8 +11,6 @@ While building [Spawnbase](https://spawnbase.ai) we realized how painful it is t
 Durable Objects store state in private SQLite databases. No REST API, no CLI, no programmatic access. The only option is [Data Studio](https://developers.cloudflare.com/durable-objects/observability/data-studio/) — manual and dashboard-only.
 
 And who would want to manually query thousands (millions?) of DOs manually, when we've got Claude Code and the like?
-
-This MCP server gives AI clients structured, read-only access to your DO storage. Connect once, discover tables, run queries.
 
 > TODO: The best version of this tool is one that doesn't need to exist. We'd love Cloudflare to ship native secure query access for DO storage.
 > Until then, this fills the gap.
@@ -43,10 +43,14 @@ A standalone Cloudflare Worker that binds to your DO namespaces via `script_name
 
 ## 🔒 Security
 
-- **Cloudflare Access (OAuth)** — auth at the edge. Unauthenticated requests never reach the Worker.
-- **PRAGMA query_only** — SQLite engine rejects all write operations at the database level.
-- **SQL guard** — server-side validation rejects non-SELECT statements before they reach the DO.
-- **Namespace allowlist** — only DO classes with bindings in `wrangler.jsonc` are queryable. Auto-discovered, no manual config.
+> **Warning:** Durable Objects can store sensitive data — session tokens, PII, payment records, conversation history. Before deploying, review what your DOs contain, only bind the namespaces you need, and restrict your Cloudflare Access policy accordingly. If you serve end users, make sure your terms of service cover this kind of data access.
+
+We took security seriously when building this. Here's what we put in place:
+
+- **Cloudflare Access (OAuth)** — all authentication happens at the edge before the request reaches the Worker. JWTs are verified against CF Access JWKS with full claims validation (signature, audience, issuer, algorithm, expiry). PKCE (S256 only) is enforced on the MCP client side. Revoking a user in your identity provider cuts their MCP session on the next token refresh.
+- **Read-only by design** — two independent layers prevent writes. A server-side SQL guard rejects anything that isn't SELECT, PRAGMA, EXPLAIN, or WITH. Inside the DO, `PRAGMA query_only = ON` enforces read-only at the SQLite engine level. Even if the guard is somehow bypassed, SQLite itself throws `SQLITE_READONLY`.
+- **No public DO access** — the `query()` RPC call uses Cloudflare service bindings (`script_name`), which stay entirely within Cloudflare's internal network. There is no public HTTP endpoint to the DOs. The MCP server is the only way in.
+- **Explicit namespace scoping** — only DO classes with bindings in `wrangler.jsonc` are discoverable and queryable. Nothing is exposed by default.
 
 ## 🛠️ Tools
 
@@ -129,27 +133,21 @@ On first connect, you'll authenticate via Cloudflare Access (browser popup). Aft
 claude mcp add --transport http do-explorer https://your-worker.workers.dev/mcp
 ```
 
-**Cursor / Windsurf / other MCP clients:**
+**Cursor** (`~/.cursor/mcp.json`):
 ```json
-{
-  "mcpServers": {
-    "do-explorer": {
-      "url": "https://your-worker.workers.dev/mcp"
-    }
-  }
-}
+{ "mcpServers": { "do-explorer": { "url": "https://your-worker.workers.dev/mcp" } } }
 ```
 
-**OpenCode / Codex / clients without remote MCP support:**
+**Codex** (`~/.codex/config.toml`):
+```toml
+[mcp_servers.do-explorer]
+url = "https://your-worker.workers.dev/mcp"
+```
+Then run `codex mcp login do-explorer` to authenticate.
+
+**OpenCode** (`opencode.json`):
 ```json
-{
-  "mcpServers": {
-    "do-explorer": {
-      "command": "npx",
-      "args": ["mcp-remote", "https://your-worker.workers.dev/mcp"]
-    }
-  }
-}
+{ "mcp": { "do-explorer": { "type": "remote", "url": "https://your-worker.workers.dev/mcp" } } }
 ```
 
 ## 📋 Requirements
