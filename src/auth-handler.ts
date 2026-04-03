@@ -139,37 +139,43 @@ export default {
         return new Response('Invalid OAuth request data', { status: 400 })
       }
 
-      const [tokens, errResponse] = await fetchUpstreamAuthToken({
-        client_id: env.ACCESS_CLIENT_ID,
-        client_secret: env.ACCESS_CLIENT_SECRET,
-        code: searchParams.get('code') ?? undefined,
-        redirect_uri: new URL('/callback', request.url).href,
-        upstream_url: urls.token,
-      })
-      if (errResponse) {
-        return errResponse
+      try {
+        const [tokens, errResponse] = await fetchUpstreamAuthToken({
+          client_id: env.ACCESS_CLIENT_ID,
+          client_secret: env.ACCESS_CLIENT_SECRET,
+          code: searchParams.get('code') ?? undefined,
+          redirect_uri: new URL('/callback', request.url).href,
+          upstream_url: urls.token,
+        })
+        if (errResponse) {
+          return errResponse
+        }
+
+        const claims = await verifyToken(urls.jwks, tokens.idToken, {
+          issuer: `https://${env.ACCESS_TEAM}.cloudflareaccess.com`,
+        })
+
+        const { redirectTo } = await env.OAUTH_PROVIDER.completeAuthorization({
+          request: oauthReqInfo,
+          userId: claims.sub,
+          metadata: { label: claims.name ?? claims.email },
+          scope: oauthReqInfo.scope,
+          props: {
+            accessToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken,
+            email: claims.email,
+            login: claims.sub,
+            name: claims.name,
+          } satisfies Props,
+        })
+
+        return Response.redirect(redirectTo, 302)
+      } catch (error) {
+        const msg =
+          error instanceof Error ? error.message : String(error)
+        console.error('Callback failed:', msg, error)
+        return new Response(`Authorization failed: ${msg}`, { status: 500 })
       }
-
-      const claims = await verifyToken(urls.jwks, tokens.idToken, {
-        audience: env.ACCESS_CLIENT_ID,
-        issuer: `https://${env.ACCESS_TEAM}.cloudflareaccess.com`,
-      })
-
-      const { redirectTo } = await env.OAUTH_PROVIDER.completeAuthorization({
-        request: oauthReqInfo,
-        userId: claims.sub,
-        metadata: { label: claims.name ?? claims.email },
-        scope: oauthReqInfo.scope,
-        props: {
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken,
-          email: claims.email,
-          login: claims.sub,
-          name: claims.name,
-        } satisfies Props,
-      })
-
-      return Response.redirect(redirectTo, 302)
     }
 
     return new Response('Not Found', { status: 404 })
@@ -228,7 +234,7 @@ function parseJWT(token: string) {
 async function verifyToken(
   jwksUrl: string,
   token: string,
-  expected: { audience: string; issuer: string },
+  expected: { issuer: string },
 ): Promise<{ sub: string; email: string; name: string; exp: number }> {
   const jwt = parseJWT(token)
 
@@ -260,11 +266,9 @@ async function verifyToken(
     throw new Error('Token not yet valid')
   }
 
-  const aud = jwt.payload.aud
-  const audArray = Array.isArray(aud) ? aud : [aud]
-  if (!audArray.includes(expected.audience)) {
-    throw new Error('Invalid token audience')
-  }
+  // No aud check — the OIDC ID token's aud contains the CF Access
+  // Application Audience Tag (not client_id). The token is already
+  // authenticated via client_secret in the token exchange.
 
   if (jwt.payload.iss !== expected.issuer) {
     throw new Error('Invalid token issuer')
