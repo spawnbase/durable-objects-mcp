@@ -98,7 +98,14 @@ Any DO binding (except `DO_MCP_AGENT`) is automatically queryable — no additio
 
 ### 3. Set up auth (Cloudflare Access)
 
-Create a [Cloudflare Access for SaaS](https://developers.cloudflare.com/cloudflare-one/access-controls/ai-controls/saas-mcp/) application with OIDC protocol. Set the redirect URL to `https://your-worker.workers.dev/callback`. Add a policy to control who can access.
+Follow the [Secure MCP servers with Access for SaaS](https://developers.cloudflare.com/cloudflare-one/access-controls/ai-controls/saas-mcp/) guide:
+
+1. Create a SaaS application in Cloudflare One → Access → Applications
+2. Select **OIDC** as the authentication protocol
+3. Set the redirect URL to `https://your-worker.workers.dev/callback`
+4. Under **Policies**, add an Access policy controlling who can connect (e.g., email list, IdP group)
+5. Under **Login methods**, select which identity providers are available (GitHub, Google, One-time PIN, etc.)
+6. Copy the **Client ID** and **Client Secret** from the app config
 
 Then set secrets:
 
