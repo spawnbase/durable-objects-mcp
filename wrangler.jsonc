@@ -57,5 +57,14 @@
       "binding": "OAUTH_KV",
       "id": "a8f678337ed043d3b7d59c66d798323c"
     }
-  ]
+  ],
+  // CF Access secrets — set via: wrangler secret put <NAME>
+  "secrets": {
+    "required": [
+      "ACCESS_TEAM",
+      "ACCESS_CLIENT_ID",
+      "ACCESS_CLIENT_SECRET",
+      "COOKIE_ENCRYPTION_KEY"
+    ]
+  }
 }
