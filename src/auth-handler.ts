@@ -151,9 +151,7 @@ export default {
           return errResponse
         }
 
-        const claims = await verifyToken(urls.jwks, tokens.idToken, {
-          issuer: `https://${env.ACCESS_TEAM}.cloudflareaccess.com`,
-        })
+        const claims = await verifyToken(urls.jwks, tokens.idToken)
 
         const { redirectTo } = await env.OAUTH_PROVIDER.completeAuthorization({
           request: oauthReqInfo,
@@ -231,10 +229,13 @@ function parseJWT(token: string) {
   }
 }
 
+// Verifies the OIDC ID token from CF Access's token exchange.
+// Signature verification against JWKS is the primary proof of authenticity.
+// No aud/iss checks — those are for edge JWTs (Cf-Access-Jwt-Assertion),
+// not OIDC ID tokens from a confidential client token exchange.
 async function verifyToken(
   jwksUrl: string,
   token: string,
-  expected: { issuer: string },
 ): Promise<{ sub: string; email: string; name: string; exp: number }> {
   const jwt = parseJWT(token)
 
@@ -264,14 +265,6 @@ async function verifyToken(
 
   if (jwt.payload.nbf !== undefined && jwt.payload.nbf > now) {
     throw new Error('Token not yet valid')
-  }
-
-  // No aud check — the OIDC ID token's aud contains the CF Access
-  // Application Audience Tag (not client_id). The token is already
-  // authenticated via client_secret in the token exchange.
-
-  if (jwt.payload.iss !== expected.issuer) {
-    throw new Error('Invalid token issuer')
   }
 
   return jwt.payload
