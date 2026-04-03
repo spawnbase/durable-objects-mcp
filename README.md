@@ -6,11 +6,7 @@ Unofficial MCP server for querying Cloudflare Durable Object SQLite storage from
 
 ## 🤔 Why
 
-While building [Spawnbase](https://spawnbase.ai) we realized how painful it is to query Durable Object storage in production. So we built this.
-
-Durable Objects store state in private SQLite databases. No REST API, no CLI, no programmatic access. The only option is [Data Studio](https://developers.cloudflare.com/durable-objects/observability/data-studio/) — manual and dashboard-only.
-
-And who would want to manually query thousands (millions?) of DOs manually, when we've got Claude Code and the like?
+Durable Objects store state in private SQLite databases with no programmatic query access — just [Data Studio](https://developers.cloudflare.com/durable-objects/observability/data-studio/) in the dashboard. We built this while working on [Spawnbase](https://spawnbase.ai) because manually clicking through thousands of DO instances isn't viable.
 
 > TODO: The best version of this tool is one that doesn't need to exist. We'd love Cloudflare to ship native secure query access for DO storage.
 > Until then, this fills the gap.
@@ -47,18 +43,18 @@ A standalone Cloudflare Worker that binds to your DO namespaces via `script_name
 
 We took security seriously when building this. Here's what we put in place:
 
-- **Cloudflare Access (OAuth)** — all authentication happens at the edge before the request reaches the Worker. JWTs are verified against CF Access JWKS with full claims validation (signature, audience, issuer, algorithm, expiry). PKCE (S256 only) is enforced on the MCP client side. Revoking a user in your identity provider cuts their MCP session on the next token refresh.
-- **Read-only by design** — two independent layers prevent writes. A server-side SQL guard rejects anything that isn't SELECT, PRAGMA, EXPLAIN, or WITH. Inside the DO, `PRAGMA query_only = ON` enforces read-only at the SQLite engine level. Even if the guard is somehow bypassed, SQLite itself throws `SQLITE_READONLY`.
+- **Cloudflare Access (OAuth)** — all authentication happens at the edge before the request reaches the Worker. JWTs are verified against CF Access JWKS (signature, algorithm, expiry). PKCE (S256 only) is enforced on the MCP client side. Revoking a user in your identity provider cuts their MCP session on the next token refresh.
+- **Read-only by design** — a server-side SQL guard rejects anything that isn't SELECT, PRAGMA, EXPLAIN, or WITH before it reaches the DO. All write statements are blocked at the MCP server level.
 - **No public DO access** — the `query()` RPC call uses Cloudflare service bindings (`script_name`), which stay entirely within Cloudflare's internal network. There is no public HTTP endpoint to the DOs. The MCP server is the only way in.
 - **Explicit namespace scoping** — only DO classes with bindings in `wrangler.jsonc` are discoverable and queryable. Nothing is exposed by default.
 
 ## 🛠️ Tools
 
-| Tool | What it does |
-|------|-------------|
-| `list_classes` | Lists queryable DO classes configured in your deployment |
-| `describe_schema` | Returns tables and columns for a DO instance |
-| `query` | Executes read-only SQL against a DO instance |
+| Tool              | What it does                                             |
+| ----------------- | -------------------------------------------------------- |
+| `list_classes`    | Lists queryable DO classes configured in your deployment |
+| `describe_schema` | Returns tables and columns for a DO instance             |
+| `query`           | Executes read-only SQL against a DO instance             |
 
 ## 🚀 Setup
 
@@ -68,17 +64,12 @@ Each DO class you want to query needs this method:
 
 ```typescript
 query(sql: string) {
-  this.ctx.storage.sql.exec('PRAGMA query_only = ON')
-  try {
-    const cursor = this.ctx.storage.sql.exec(sql)
-    return { columns: cursor.columnNames, rows: [...cursor.raw()] }
-  } finally {
-    this.ctx.storage.sql.exec('PRAGMA query_only = OFF')
-  }
+  const cursor = this.ctx.storage.sql.exec(sql)
+  return { columns: cursor.columnNames, rows: [...cursor.raw()] }
 }
 ```
 
-`PRAGMA query_only` enforces read-only at the SQLite engine level — INSERT, UPDATE, DELETE, DROP, CREATE all throw `SQLITE_READONLY`.
+The MCP server's SQL guard blocks all non-SELECT statements before they reach the DO.
 
 ### 2. Clone and configure
 
@@ -129,25 +120,41 @@ wrangler deploy
 On first connect, you'll authenticate via Cloudflare Access (browser popup). After that, the session persists.
 
 **Claude Code:**
+
 ```bash
 claude mcp add --transport http do-explorer https://your-worker.workers.dev/mcp
 ```
 
 **Cursor** (`~/.cursor/mcp.json`):
+
 ```json
-{ "mcpServers": { "do-explorer": { "url": "https://your-worker.workers.dev/mcp" } } }
+{
+  "mcpServers": {
+    "do-explorer": { "url": "https://your-worker.workers.dev/mcp" }
+  }
+}
 ```
 
 **Codex** (`~/.codex/config.toml`):
+
 ```toml
 [mcp_servers.do-explorer]
 url = "https://your-worker.workers.dev/mcp"
 ```
+
 Then run `codex mcp login do-explorer` to authenticate.
 
 **OpenCode** (`opencode.json`):
+
 ```json
-{ "mcp": { "do-explorer": { "type": "remote", "url": "https://your-worker.workers.dev/mcp" } } }
+{
+  "mcp": {
+    "do-explorer": {
+      "type": "remote",
+      "url": "https://your-worker.workers.dev/mcp"
+    }
+  }
+}
 ```
 
 ## 📋 Requirements
